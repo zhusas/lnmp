@@ -435,7 +435,103 @@ make -j $(cat /proc/cpuinfo| grep "processor"|wc -l) && make install
 
 echo "====================Setup Nginx initd========================"
 
-cp /root/nginx_initd  /etc/init.d/nginx
+cat > /etc/init.d/nginx<<EOF
+	#!/bin/bash
+	# nginx This shell script takes care of starting and stopping
+	# nginx
+	#
+	# chkconfig: - 13 68
+	# description: nginx is a web server
+	### BEGIN INIT INFO
+	# Provides: $named
+	# Short-Description: start|stop|status|restart|configtest 
+	### END INIT INFO
+	#variables
+	NGINX_BIN="$LNMP_DIR/nginx/sbin/nginx"
+	NGINX_CONF="$LNMP_DIR/nginx/conf/nginx.conf"
+	NGINX_PID="$LNMP_DIR/nginx/logs/nginx.pid"
+	NETSTAT="/bin/netstat"
+	alter=$1
+	prog=nginx
+	#load system function
+	. /etc/rc.d/init.d/functions
+	#function:echo ok or error
+	function if_no {
+	if [ $2 == 0 ]; then
+	echo -n $"$1 ${prog}:" && success && echo
+	else
+	echo -n $"$1 ${prog}:" && failure && echo
+	fi
+	}
+	#start nginx
+	function start {
+	if [ -s ${NGINX_PID} ]; then
+	echo "nginx already running" 
+	else
+	if [ `${NETSTAT} -tnpl | grep nginx | wc -l` -eq 0 ]; then
+	rm -f ${NGINX_PID} 2>/dev/null
+	${NGINX_BIN} -c ${NGINX_CONF} 
+	if_no start $?
+		else
+	${NETSTAT} -tnpl | grep nginx | awk '{ print $7}' | cut -d '/' -f 1 > ${NGINX_PID}
+	if_no start $?
+	fi
+	fi
+	}
+	#stop nginx
+	function stop {
+	if [ -s ${NGINX_PID} ]; then
+	cat ${NGINX_PID} | xargs kill -QUIT
+	if_no stop $?
+	else
+		if [ `${NETSTAT} -tnpl | grep nginx | wc -l` -eq 0 ]; then
+	rm -f ${NGINX_PID} 2>/dev/null
+	if_no stop 0
+	else
+	rm -f ${NGINX_PID} 2>/dev/null
+	kill `${NETSTAT} -tnpl | grep nginx | awk '{ print $7}' | cut -d '/' -f 1`
+	if_no stop $?
+	fi
+	fi
+	}
+	function restart {
+	if [ -s ${NGINX_PID} ]; then
+	cat ${NGINX_PID} | xargs kill -HUP
+	if_no restart $?
+	else
+	stop
+	sleep 1
+	start
+	fi
+	}
+	function status {
+	${NETSTAT} -tnpl | grep nginx | grep LISTEN
+	[ $? == 0 ] && echo "nginx is running" || echo "nginx is not running"
+	}
+	function configtest {
+	${NGINX_BIN} -t
+	}
+	case $alter in
+	start)
+	start
+	;;
+	stop)
+	stop
+	;;
+	restart)
+	restart
+	;;
+	status)
+	status
+	;;
+	configtest)
+	configtest
+	;;
+	*)
+	echo "use:${NGINX} {start|stop|restart|status|configtest}"
+	;;
+	esac
+EOF
 
 chkconfig --add nginx 
 chkconfig nginx on
